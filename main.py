@@ -165,10 +165,12 @@ def find_pdf_path(client: ZoteroClient, item_key: str) -> Optional[str]:
 # Pipeline principal
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _guess_source(refs: list) -> str:
+def _sources_label(refs: list) -> str:
+    """Devuelve las fuentes únicas que aportaron refs, en orden de aparición."""
     if not refs:
         return "unknown"
-    return refs[0].source
+    seen = dict.fromkeys(r.source for r in refs if r.source)
+    return " · ".join(seen) if seen else "unknown"
 
 
 def run_pipeline(
@@ -258,6 +260,8 @@ def run_pipeline(
     stats = ReportStats(total_items_in_library=len(raw_items))
     item_reports: list[ItemReport] = []
     diagnostic_counts: dict[str, int] = {}
+    doi_to_lib_item: dict[str, LibraryItem] = {}
+    doi_to_report: dict[str, ItemReport] = {}
 
     lib_items: list[LibraryItem] = matcher._library
     if limit:
@@ -362,7 +366,7 @@ def run_pipeline(
                     if ext_parsed:
                         refs.extend(ext_parsed)
                         external_refs_used = True
-                        diag.external_source = _guess_source(ext_refs)
+                        diag.external_source = _sources_label(ext_refs)
                         pdf_failed = diag.status in (
                             PDFStatus.OCR_NEEDED.value, PDFStatus.FEW_REFS.value,
                             PDFStatus.NO_ATTACHMENT.value, PDFStatus.NOT_FOUND.value,
@@ -389,7 +393,7 @@ def run_pipeline(
 
             stats.refs_unmatched = stats.total_refs_extracted - stats.refs_matched
 
-            item_reports.append(ItemReport(
+            item_report = ItemReport(
                 item               = lib_item,
                 pdf_path           = pdf_path,
                 refs_extracted     = len(refs),
@@ -397,7 +401,60 @@ def run_pipeline(
                 error              = error,
                 diagnostic         = diag,
                 external_refs_used = external_refs_used,
-            ))
+            )
+            item_reports.append(item_report)
+            if lib_item.doi:
+                _doi_key = lib_item.doi.lower().strip()
+                doi_to_lib_item[_doi_key] = lib_item
+                doi_to_report[_doi_key]   = item_report
+
+    # ── 6.5 Reintentos por rate limit ─────────────────────────────────────────
+    if ext_client and ext_client.has_pending_retries():
+        console.rule("[bold]3.5 · Reintentos por rate limit[/bold]")
+        recovered = ext_client.flush_retry_queue()
+        if recovered:
+            console.print(f"[green]Recuperadas refs para {len(recovered)} artículos[/green]")
+            for doi_lower, new_ext_refs in recovered.items():
+                lib_item = doi_to_lib_item.get(doi_lower)
+                item_report = doi_to_report.get(doi_lower)
+                if not lib_item or not item_report:
+                    continue
+                # Dedup contra DOIs ya cubiertos en los candidatos existentes
+                existing_ref_dois = {
+                    (c.ref_extracted_doi or "").lower()
+                    for c in item_report.candidates if c.ref_extracted_doi
+                }
+                parsed_new: list[ParsedReference] = []
+                for i, r in enumerate(new_ext_refs):
+                    doi_n = (r.doi or "").lower()
+                    if doi_n and doi_n in existing_ref_dois:
+                        continue
+                    parsed_new.append(ParsedReference(
+                        raw_text  = r.title or "",
+                        doi       = r.doi,
+                        arxiv_id  = r.arxiv_id,
+                        title     = r.title,
+                        authors   = r.authors,
+                        year      = r.year,
+                        ref_index = i,
+                    ))
+                if not parsed_new:
+                    continue
+                new_candidates = matcher.build_relation_candidates(
+                    source_item    = lib_item,
+                    references     = parsed_new,
+                    min_confidence = min_confidence,
+                )
+                existing_targets = {c.target_key for c in item_report.candidates}
+                added = [c for c in new_candidates if c.target_key not in existing_targets]
+                if added:
+                    item_report.candidates.extend(added)
+                    item_report.external_refs_used = True
+                    stats.total_refs_extracted += len(parsed_new)
+                    stats.refs_matched         += len(added)
+                    stats.new_relations        += sum(1 for c in added if not c.already_exists)
+                    stats.existing_relations   += sum(1 for c in added if c.already_exists)
+            stats.refs_unmatched = stats.total_refs_extracted - stats.refs_matched
 
     stats.processing_time_s = time.time() - t_start
 
