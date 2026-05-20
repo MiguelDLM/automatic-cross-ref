@@ -124,6 +124,18 @@ class ReportBuilder:
         nodes: dict[str, dict] = {}
         links: list[dict] = []
 
+        # Pre-index target metadata from candidates so target-only nodes get titles
+        target_meta: dict[str, dict] = {}
+        for report in reports:
+            for c in report.candidates:
+                if c.target_key not in target_meta and c.target_title:
+                    target_meta[c.target_key] = {
+                        "title": c.target_title,
+                        "authors": c.target_authors,
+                        "year": c.target_year or "",
+                        "doi": c.target_doi or "",
+                    }
+
         for report in reports:
             item = report.item
             node_id = item.key
@@ -155,14 +167,15 @@ class ReportBuilder:
         for link in links:
             tid = link["target"]
             if tid not in nodes:
+                meta = target_meta.get(tid, {})
                 nodes[tid] = {
                     "id": tid,
-                    "title": tid,
+                    "title": meta.get("title", tid),
                     "type": "item",
                     "links": {},
-                    "doi": "",
-                    "year": "",
-                    "authors": [],
+                    "doi": meta.get("doi", ""),
+                    "year": meta.get("year", ""),
+                    "authors": meta.get("authors", []),
                 }
 
         return {"nodes": nodes, "links": links}
@@ -338,7 +351,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   /* ── Table ── */
   .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid #1f2937; }
   table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
-  thead { position: sticky; top: 52px; z-index: 10; }
+  thead { position: sticky; top: 0; z-index: 9; }
   th { background: #111827; color: #64748b; padding: 0.65rem 1rem; text-align: left;
        font-weight: 600; text-transform: uppercase; font-size: 0.68rem; letter-spacing: .05em;
        border-bottom: 1px solid #1f2937; white-space: nowrap; }
@@ -504,7 +517,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             {% if rep.candidates %}
             {% set new_cands = rep.candidates | selectattr("already_exists","equalto",false) | list %}
             {% set old_cands = rep.candidates | selectattr("already_exists","equalto",true)  | list %}
-            <details {% if new_count > 0 %}open{% endif %}>
+            <details>
               <summary class="cand-summary">
                 {% if new_count > 0 %}
                   <span style="color:#4ade80">{{ new_count }} nueva{{ 's' if new_count > 1 else '' }}</span>
