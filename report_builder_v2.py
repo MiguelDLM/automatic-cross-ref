@@ -85,27 +85,32 @@ class ReportBuilder:
         stats: ReportStats,
         reports: list[ItemReport],
         output_dir: str = "output",
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, str]:
         """
-        Genera informe HTML + JSON de relaciones.
-        Devuelve (html_path, json_path).
+        Genera informe HTML + JSON de relaciones + JSON de verificación.
+        Devuelve (html_path, relations_json_path, verification_json_path).
         """
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
 
         now = datetime.now().strftime("%Y%m%d_%H%M%S")
-        html_path = str(out / f"report_{now}.html")
-        json_path = str(out / f"relations_{now}.json")
+        html_path         = str(out / f"report_{now}.html")
+        json_path         = str(out / f"relations_{now}.json")
+        verification_path = str(out / f"verification_{now}.json")
 
         graph_data = self._build_graph(reports)
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(graph_data, f, ensure_ascii=False, indent=2)
 
+        verification = self._build_verification(stats, reports, now)
+        with open(verification_path, "w", encoding="utf-8") as f:
+            json.dump(verification, f, ensure_ascii=False, indent=2)
+
         html = self._render_html(stats, reports, graph_data, json_path)
         with open(html_path, "w", encoding="utf-8") as f:
             f.write(html)
 
-        return html_path, json_path
+        return html_path, json_path, verification_path
 
     # ─────────────────────────────────────────────────────────────────────────
     # Construcción del grafo (compatible con zotero-style)
@@ -161,6 +166,90 @@ class ReportBuilder:
                 }
 
         return {"nodes": nodes, "links": links}
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # JSON de verificación (para agente de IA)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _build_verification(
+        self,
+        stats: ReportStats,
+        reports: list[ItemReport],
+        timestamp: str,
+    ) -> dict:
+        """
+        Genera un JSON estructurado para revisión posterior por IA o humano.
+        Cada match incluye toda la evidencia que justifica (o no) la asignación.
+        """
+        matches = []
+        for report in reports:
+            src = report.item
+            for c in report.candidates:
+                if c.already_exists:
+                    continue
+                match_id = f"{c.source_key}__{c.target_key}"
+                method_label = METHOD_LABELS.get(c.match_method, c.match_method)
+
+                matches.append({
+                    "id": match_id,
+                    "status": "pending",
+                    "ai_notes": None,
+                    "user_notes": None,
+                    "source": {
+                        "key": src.key,
+                        "title": src.title,
+                        "authors": src.authors,
+                        "year": src.year,
+                        "doi": src.doi,
+                    },
+                    "target": {
+                        "key": c.target_key,
+                        "title": c.target_title,
+                        "authors": c.target_authors,
+                        "year": c.target_year,
+                        "doi": c.target_doi,
+                    },
+                    "evidence": {
+                        "confidence": c.confidence,
+                        "method": c.match_method,
+                        "method_label": method_label,
+                        "raw_reference_text": c.reference_text,
+                        "ref_extracted_doi": c.ref_extracted_doi,
+                        "ref_extracted_title": c.ref_extracted_title,
+                        "ref_normalized_title": c.ref_normalized_title,
+                        "target_normalized_title": c.target_normalized_title,
+                        "ref_extracted_year": c.ref_year,
+                        "ref_extracted_authors": c.ref_authors,
+                    },
+                })
+
+        new_count = len(matches)
+        existing_count = sum(
+            1 for rep in reports for c in rep.candidates if c.already_exists
+        )
+
+        return {
+            "generated_at": timestamp,
+            "version": "1.0",
+            "ai_instructions": (
+                "Review each entry in 'matches' where status='pending'. "
+                "For each match, determine whether the source article plausibly cites "
+                "the target article. Use 'evidence.raw_reference_text' as the extracted "
+                "citation, 'evidence.ref_extracted_title' as the parsed title, and compare "
+                "with 'target.title'. For DOI matches (method='doi_exact'), confidence is "
+                "always 100%% — approve unless titles are completely unrelated. "
+                "For fuzzy matches (method='title_fuzzy'), inspect "
+                "'evidence.ref_normalized_title' vs 'evidence.target_normalized_title'. "
+                "Set status to 'approved' or 'rejected', add a brief 'ai_notes' string "
+                "explaining the decision. Return the complete modified JSON."
+            ),
+            "summary": {
+                "total_new_matches": new_count,
+                "already_in_zotero": existing_count,
+                "pending_review": new_count,
+            },
+            "matches": matches,
+        }
 
     # ─────────────────────────────────────────────────────────────────────────
     # Renderizado HTML

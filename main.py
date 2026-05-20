@@ -407,16 +407,19 @@ def run_pipeline(
     # ── 8. Generar informe ────────────────────────────────────────────────────
     console.rule("[bold]5 · Generando informe[/bold]")
     builder = ReportBuilder()
-    html_path, json_path = builder.build(
+    html_path, json_path, verification_path = builder.build(
         stats      = stats,
         reports    = item_reports,
         output_dir = r_cfg.get("output_dir", "output"),
     )
-    console.print(f"[green]✓ Informe HTML: {html_path}[/green]")
-    console.print(f"[green]✓ JSON de relaciones: {json_path}[/green]")
+    console.print(f"[green]✓ Informe HTML:         {html_path}[/green]")
+    console.print(f"[green]✓ JSON de relaciones:   {json_path}[/green]")
+    console.print(f"[green]✓ JSON de verificación: {verification_path}[/green]")
     console.print(Panel(
-        f"Usa [bold]python main.py apply-links {json_path}[/bold]\n"
-        "para aplicar las relaciones sugeridas en Zotero.",
+        f"Revisa y aprueba los matches antes de aplicarlos:\n\n"
+        f"  [bold]python main.py review {verification_path}[/bold]\n\n"
+        "O aplica directamente (sin revisión):\n\n"
+        f"  [bold]python main.py apply-links {json_path}[/bold]",
         border_style="dim"))
 
     if ext_client:
@@ -528,6 +531,174 @@ def apply_links(json_file, config):
             progress.advance(task)
 
     console.print("[bold green]¡Relaciones aplicadas en Zotero![/bold green]")
+    client.close()
+
+
+@cli.command("review")
+@click.argument("verification_file", type=click.Path(exists=True))
+@click.option("--config", default="config.yaml", help="Archivo de configuración")
+@click.option("--apply/--no-apply", default=True, show_default=True,
+              help="Aplicar automáticamente los matches aprobados al terminar la revisión")
+def review(verification_file, config, apply):
+    """
+    Revisa interactivamente los matches candidatos y aplica los aprobados en Zotero.
+
+    Lee el archivo verification_*.json generado por 'run', muestra cada match
+    pendiente con toda la evidencia y pide confirmación antes de aplicar.
+    Al terminar, guarda el JSON actualizado con las decisiones del usuario.
+    """
+    import json as json_mod
+
+    cfg = load_config(config)
+
+    with open(verification_file, "r", encoding="utf-8") as f:
+        data = json_mod.load(f)
+
+    matches = data.get("matches", [])
+    pending = [m for m in matches if m.get("status") == "pending"]
+
+    if not pending:
+        console.print("[green]No hay matches pendientes de revisión.[/green]")
+        return
+
+    console.print(Panel(
+        f"[bold]{len(pending)} matches pendientes[/bold] de revisión.\n\n"
+        "  [bold green]a[/bold green] = aprobar   "
+        "[bold red]r[/bold red] = rechazar   "
+        "[bold yellow]s[/bold yellow] = saltar   "
+        "[bold]q[/bold] = salir (y guardar)\n\n"
+        "Los matches aprobados se aplicarán en Zotero al terminar.",
+        title="Revisión interactiva de matches",
+        border_style="blue",
+    ))
+
+    idx_map = {m["id"]: i for i, m in enumerate(matches)}
+    approved: list[dict] = []
+    reviewed = 0
+
+    for match in pending:
+        reviewed += 1
+        src = match["source"]
+        tgt = match["target"]
+        ev  = match["evidence"]
+
+        console.rule(f"[dim]{reviewed}/{len(pending)}[/dim]")
+
+        # Fuente
+        src_authors = "; ".join((src.get("authors") or [])[:3])
+        console.print(
+            f"[bold cyan]FUENTE:[/bold cyan] [bold]{src['title']}[/bold]\n"
+            f"  [dim]{src_authors}{' · ' + src['year'] if src.get('year') else ''}"
+            f"{' · DOI: ' + src['doi'] if src.get('doi') else ''}[/dim]"
+        )
+
+        # Destino
+        tgt_authors = "; ".join((tgt.get("authors") or [])[:3])
+        console.print(
+            f"[bold magenta]DESTINO:[/bold magenta] [bold]{tgt['title']}[/bold]\n"
+            f"  [dim]{tgt_authors}{' · ' + tgt['year'] if tgt.get('year') else ''}"
+            f"{' · DOI: ' + tgt['doi'] if tgt.get('doi') else ''}[/dim]"
+        )
+
+        # Evidencia
+        method_label = ev.get("method_label", ev.get("method", ""))
+        console.print(
+            f"\n  Confianza: [bold]{ev['confidence']}%[/bold]  ·  Método: {method_label}"
+        )
+        if ev.get("raw_reference_text"):
+            raw = ev["raw_reference_text"][:200]
+            console.print(f"  Texto extraído: [dim italic]{raw}[/dim italic]")
+        if ev.get("method") == "title_fuzzy":
+            console.print(
+                f"  Título ref (norm.):    [yellow]{ev.get('ref_normalized_title', '')}[/yellow]\n"
+                f"  Título target (norm.): [yellow]{ev.get('target_normalized_title', '')}[/yellow]"
+            )
+
+        # Decisión
+        console.print()
+        while True:
+            choice = click.prompt(
+                "  Decisión [a/r/s/q]",
+                default="s",
+                show_default=False,
+            ).strip().lower()
+            if choice in ("a", "r", "s", "q"):
+                break
+            console.print("  [red]Opción no válida. Usa a, r, s o q.[/red]")
+
+        if choice == "q":
+            console.print("[yellow]Revisión interrumpida. Guardando progreso...[/yellow]")
+            break
+
+        note = None
+        if choice in ("a", "r"):
+            note = click.prompt("  Nota (opcional, Enter para omitir)", default="", show_default=False) or None
+
+        real_idx = idx_map[match["id"]]
+        if choice == "a":
+            matches[real_idx]["status"] = "approved"
+            matches[real_idx]["user_notes"] = note
+            approved.append(match)
+            console.print("[green]  ✓ Aprobado[/green]")
+        elif choice == "r":
+            matches[real_idx]["status"] = "rejected"
+            matches[real_idx]["user_notes"] = note
+            console.print("[red]  ✗ Rechazado[/red]")
+        else:
+            console.print("[dim]  → Saltado[/dim]")
+
+    # Guardar JSON actualizado con decisiones
+    data["matches"] = matches
+    data["summary"]["pending_review"] = sum(1 for m in matches if m.get("status") == "pending")
+    data["summary"]["approved"] = sum(1 for m in matches if m.get("status") == "approved")
+    data["summary"]["rejected"] = sum(1 for m in matches if m.get("status") == "rejected")
+
+    with open(verification_file, "w", encoding="utf-8") as f:
+        json_mod.dump(data, f, ensure_ascii=False, indent=2)
+    console.print(f"\n[dim]JSON de verificación actualizado: {verification_file}[/dim]")
+
+    console.rule("[bold]Resumen de revisión[/bold]")
+    console.print(
+        f"  Aprobados: [bold green]{len(approved)}[/bold green]   "
+        f"Rechazados: [bold red]{sum(1 for m in matches if m.get('status')=='rejected')}[/bold red]   "
+        f"Pendientes: [bold yellow]{sum(1 for m in matches if m.get('status')=='pending')}[/bold yellow]"
+    )
+
+    if not approved:
+        console.print("[yellow]No hay matches aprobados para aplicar.[/yellow]")
+        return
+
+    if not apply:
+        console.print(
+            f"[dim]--no-apply activo: se omite la escritura en Zotero. "
+            f"Vuelve a ejecutar sin --no-apply para aplicarlos.[/dim]"
+        )
+        return
+
+    # Aplicar matches aprobados en Zotero
+    console.rule("[bold]Aplicando relaciones aprobadas en Zotero[/bold]")
+    client = ZoteroClient(cfg["zotero"]["api_url"], cfg["zotero"].get("api_key", ""))
+    if not client.ping():
+        console.print("[red]✗ Zotero no disponible. Las relaciones NO se han aplicado.[/red]")
+        return
+
+    updates: dict[str, list[str]] = {}
+    for match in approved:
+        src_key = match["source"]["key"]
+        tgt_key = match["target"]["key"]
+        updates.setdefault(src_key, []).append(tgt_key)
+
+    ok = 0
+    with Progress(console=console) as progress:
+        task = progress.add_task("Aplicando…", total=len(updates))
+        for src_key, targets in updates.items():
+            if client.add_relations(src_key, targets):
+                ok += 1
+            progress.advance(task)
+
+    console.print(
+        f"[bold green]✓ Relaciones aplicadas en {ok}/{len(updates)} artículos.[/bold green]"
+    )
     client.close()
 
 

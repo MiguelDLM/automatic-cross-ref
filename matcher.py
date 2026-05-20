@@ -67,6 +67,13 @@ class RelationCandidate:
     target_authors: list[str] = field(default_factory=list)
     target_year: Optional[str] = None
     target_doi: Optional[str] = None
+    target_normalized_title: str = ""
+    # Evidencia de la referencia extraída (para verificación por IA)
+    ref_extracted_doi: Optional[str] = None
+    ref_extracted_title: Optional[str] = None
+    ref_normalized_title: str = ""
+    ref_year: Optional[str] = None
+    ref_authors: list[str] = field(default_factory=list)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -322,12 +329,18 @@ class ReferenceMatcher:
                 target_key=tgt.key,
                 confidence=result.confidence,
                 match_method=result.match_method,
-                reference_text=ref.raw_text[:200],
+                reference_text=ref.raw_text[:300],
                 already_exists=already_exists,
                 target_title=tgt.title,
                 target_authors=tgt.authors[:3],
                 target_year=tgt.year,
                 target_doi=tgt.doi,
+                target_normalized_title=tgt._title_normalized,
+                ref_extracted_doi=ref.doi,
+                ref_extracted_title=ref.title,
+                ref_normalized_title=_normalize_title(ref.title or ref.raw_text[:120]),
+                ref_year=ref.year,
+                ref_authors=ref.authors[:5],
             ))
 
         # Deduplicar (mismo target puede aparecer varias veces)

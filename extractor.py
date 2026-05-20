@@ -154,27 +154,64 @@ class PDFExtractor:
 
     def _find_reference_section(self, lines: list[str]) -> list[str]:
         """
-        Busca el inicio de la sección de referencias y devuelve las líneas
-        que la siguen. Busca desde el final hacia atrás para coger la última
-        sección de referencias (en caso de que haya varias).
+        Busca el inicio de la sección de referencias.
+        Estrategia 1: encabezado explícito ("References", "Bibliography", etc.)
+        Estrategia 2: cluster de patrones de referencia sin encabezado.
         """
-        # Buscar desde el final para coger la sección más tardía
+        # ── Estrategia 1: encabezado explícito (buscar desde el final) ──────────
         for i in range(len(lines) - 1, -1, -1):
             line = lines[i].strip()
             for header in self.section_headers:
                 if line.lower() == header.lower() or line.lower().startswith(header.lower() + " "):
                     return lines[i + 1:]
-            # Encabezado con numeración de sección: "5. References", "6 Bibliography"
             for header in self.section_headers:
                 if re.match(rf'^\d+\.?\s+{re.escape(header)}\s*$', line, re.IGNORECASE):
                     return lines[i + 1:]
 
-        # Fallback: buscar en el texto la primera aparición de un encabezado
         for i, line in enumerate(lines):
             stripped = line.strip()
             for header in self.section_headers:
                 if stripped.lower() == header.lower():
                     return lines[i + 1:]
+
+        # ── Estrategia 2: detección por densidad de patrones ────────────────────
+        return self._detect_ref_cluster(lines)
+
+    def _detect_ref_cluster(self, lines: list[str]) -> list[str]:
+        """
+        Fallback cuando no hay encabezado explícito.
+        Busca el primer punto donde se acumulen ≥3 líneas con patrón de
+        inicio de referencia en una ventana de 12 líneas.
+        También detecta estilo APA sin numeración (autor-año al inicio).
+        """
+        stripped = [l.strip() for l in lines]
+
+        # 2a. Cluster numerado/con corchetes ([1], (1), 1., etc.)
+        WINDOW, MIN_HITS = 12, 3
+        for i in range(len(stripped) - WINDOW + 1):
+            chunk = stripped[i:i + WINDOW]
+            hits = sum(1 for l in chunk if l and self._is_ref_start(l))
+            if hits >= MIN_HITS:
+                return lines[i:]
+
+        # 2b. Cluster APA: líneas cortas que empiezan por APELLIDO, Inicial.
+        # Ej: "Thomason, J.J. 1991." / "SMITH AB (2005)"
+        apa = re.compile(
+            r'^[A-ZÀ-Ü][A-Za-zÀ-ÿ\-]{1,25}[,\s]+[A-Z\.]{1,6}'  # apellido + inicial
+            r'.*\(?(19|20)\d{2}\)?'                                 # año
+        )
+        for i in range(len(stripped) - 4):
+            chunk = stripped[i:i + 6]
+            hits = sum(1 for l in chunk if apa.match(l))
+            if hits >= 2:
+                return lines[i:]
+
+        # 2c. Densidad de DOIs: si hay ≥2 DOIs en 10 líneas, es una sección de refs
+        for i in range(len(stripped) - 9):
+            chunk = stripped[i:i + 10]
+            dois = sum(1 for l in chunk if DOI_PATTERN.search(l.replace(" ", "")))
+            if dois >= 2:
+                return lines[i:]
 
         return []
 
