@@ -34,7 +34,7 @@ class ReferenceSourceClient:
     """
     Consulta fuentes académicas externas para obtener las referencias
     citadas por un artículo dado su DOI o título.
-    Prioridad: Semantic Scholar → OpenAlex → CrossRef → PubMed
+    Prioridad: Semantic Scholar → OpenAlex → CrossRef → CORE → PubMed
     """
 
     def __init__(
@@ -43,18 +43,26 @@ class ReferenceSourceClient:
         crossref_email: str = "",
         openalex_email: str = "",
         ncbi_api_key: str = "",
+        core_api_key: str = "",
         request_delay: float = 0.1,
     ):
         self.ss_key = semantic_scholar_key
         self.crossref_email = crossref_email
         self.openalex_email = openalex_email
         self.ncbi_key = ncbi_api_key
+        self.core_key = core_api_key
         self.delay = request_delay
 
         headers = {"User-Agent": "ZoteroReferenceAutomator/1.0 (academic research)"}
         if semantic_scholar_key:
             headers["x-api-key"] = semantic_scholar_key
         self._http = httpx.Client(timeout=20.0, headers=headers, follow_redirects=True)
+
+        # Cliente separado para CORE (Authorization Bearer)
+        core_headers = {"User-Agent": "ZoteroReferenceAutomator/1.0 (academic research)"}
+        if core_api_key:
+            core_headers["Authorization"] = f"Bearer {core_api_key}"
+        self._core_http = httpx.Client(timeout=20.0, headers=core_headers, follow_redirects=True)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Public API
@@ -63,12 +71,14 @@ class ReferenceSourceClient:
     def get_references_by_doi(self, doi: str) -> list[ExternalReference]:
         """
         Devuelve las referencias citadas por el artículo con ese DOI.
-        Intenta las fuentes en orden de prioridad.
+        Intenta las fuentes en orden de prioridad:
+        Semantic Scholar → OpenAlex → CrossRef → CORE → PubMed
         """
         for method in (
             self._ss_references,
             self._openalex_references,
             self._crossref_references,
+            self._core_references,
             self._pubmed_references,
         ):
             try:
@@ -82,6 +92,7 @@ class ReferenceSourceClient:
 
     def close(self):
         self._http.close()
+        self._core_http.close()
 
     # ─────────────────────────────────────────────────────────────────────────
     # Semantic Scholar
@@ -233,6 +244,84 @@ class ReferenceSourceClient:
             year=str(year) if year else None,
             authors=authors,
             source="crossref",
+            raw=ref,
+        )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # CORE (core.ac.uk)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _core_references(self, doi: str) -> list[ExternalReference]:
+        """
+        Obtiene referencias desde CORE (core.ac.uk).
+        Requiere API key para acceso sin límites estrictos.
+        """
+        if not self.core_key:
+            return []
+
+        # Buscar el trabajo por DOI en CORE
+        url = "https://api.core.ac.uk/v3/search/works"
+        params = {"q": f'doi:"{doi}"', "limit": 1}
+        r = self._core_http.get(url, params=params)
+        if r.status_code == 401:
+            console.print("[dim yellow]CORE API: clave inválida o expirada[/dim yellow]")
+            return []
+        if r.status_code != 200:
+            return []
+
+        data = r.json()
+        results = data.get("results") or []
+        if not results:
+            return []
+
+        work = results[0]
+        raw_refs = work.get("references") or []
+        if not raw_refs:
+            return []
+
+        refs = []
+        for ref in raw_refs:
+            if isinstance(ref, str):
+                # Referencia sin estructura — texto plano
+                refs.append(ExternalReference(
+                    title=ref[:300] if ref else None,
+                    doi=None,
+                    arxiv_id=None,
+                    year=None,
+                    authors=[],
+                    source="core",
+                    raw={"rawText": ref},
+                ))
+            elif isinstance(ref, dict):
+                refs.append(self._parse_core_ref(ref))
+
+        return refs
+
+    def _parse_core_ref(self, ref: dict) -> ExternalReference:
+        doi = ref.get("doi") or ref.get("DOI")
+        title = ref.get("title")
+        year = ref.get("year") or ref.get("publishedDate", "")[:4] or None
+        authors = []
+        for a in (ref.get("authors") or []):
+            name = a.get("name", "") if isinstance(a, dict) else str(a)
+            if name:
+                authors.append(name)
+
+        arxiv_id = None
+        for url_field in ("downloadUrl", "fullTextIdentifier"):
+            val = ref.get(url_field, "") or ""
+            m = re.search(r'arxiv\.org/abs/(\d+\.\d+)', val, re.IGNORECASE)
+            if m:
+                arxiv_id = m.group(1)
+                break
+
+        return ExternalReference(
+            title=title,
+            doi=doi or None,
+            arxiv_id=arxiv_id,
+            year=str(year) if year else None,
+            authors=authors,
+            source="core",
             raw=ref,
         )
 

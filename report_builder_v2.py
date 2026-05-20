@@ -201,47 +201,118 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <title>Zotero Reference Automator — Informe</title>
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
-  header { background: #1e293b; padding: 1.5rem 2rem; border-bottom: 1px solid #334155; }
-  header h1 { font-size: 1.4rem; color: #f1f5f9; }
-  header p  { color: #94a3b8; font-size: 0.85rem; margin-top: 0.25rem; }
-  .container { max-width: 1400px; margin: 0 auto; padding: 1.5rem 2rem; }
-  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 1rem; margin-bottom: 2rem; }
-  .stat-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 1rem; text-align: center; }
-  .stat-card .num { font-size: 2rem; font-weight: 700; color: #38bdf8; }
-  .stat-card .lbl { font-size: 0.75rem; color: #94a3b8; margin-top: 0.25rem; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #0a0f1e; color: #e2e8f0; line-height: 1.5; }
+
+  /* ── Header ── */
+  header { background: #111827; padding: 1.25rem 2rem; border-bottom: 1px solid #1f2937;
+           display: flex; align-items: center; gap: 1rem; position: sticky; top: 0; z-index: 100; }
+  header h1 { font-size: 1.1rem; font-weight: 700; color: #f8fafc; }
+  header .sub { color: #64748b; font-size: 0.78rem; margin-left: auto; white-space: nowrap; }
+
+  /* ── Layout ── */
+  .container { max-width: 1500px; margin: 0 auto; padding: 1.5rem 2rem; }
   section { margin-bottom: 2.5rem; }
-  h2 { font-size: 1.1rem; color: #f1f5f9; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #334155; }
-  #graph-container { background: #1e293b; border: 1px solid #334155; border-radius: 8px; height: 600px; position: relative; }
+  h2 { font-size: 0.95rem; font-weight: 600; color: #94a3b8; text-transform: uppercase;
+       letter-spacing: .06em; margin-bottom: 1rem; padding-bottom: 0.5rem;
+       border-bottom: 1px solid #1f2937; }
+
+  /* ── Stats grid ── */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 0.75rem; margin-bottom: 2rem; }
+  .stat-card { background: #111827; border: 1px solid #1f2937; border-radius: 10px; padding: 1rem 0.75rem; text-align: center; }
+  .stat-card .num { font-size: 1.8rem; font-weight: 800; color: #38bdf8; line-height: 1.1; }
+  .stat-card .lbl { font-size: 0.7rem; color: #64748b; margin-top: 0.3rem; text-transform: uppercase; letter-spacing: .04em; }
+
+  /* ── Graph ── */
+  #graph-container { background: #111827; border: 1px solid #1f2937; border-radius: 10px;
+                     height: 560px; position: relative; overflow: hidden; }
   #graph-svg { width: 100%; height: 100%; }
-  .node circle { cursor: pointer; }
-  .node text { font-size: 10px; fill: #cbd5e1; pointer-events: none; }
-  .link { stroke: #475569; stroke-opacity: 0.5; }
-  .link.new { stroke: #38bdf8; stroke-opacity: 0.8; }
-  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-  th { background: #1e293b; color: #94a3b8; padding: 0.6rem 0.8rem; text-align: left; position: sticky; top: 0; }
-  td { padding: 0.5rem 0.8rem; border-bottom: 1px solid #1e293b; vertical-align: top; }
-  tr:nth-child(even) td { background: #0f172a08; }
-  tr:hover td { background: #1e293b50; }
-  .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
-  .truncate { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .candidate-list { list-style: none; padding: 0; }
-  .candidate-list li { margin-bottom: 0.25rem; font-size: 0.75rem; color: #94a3b8; }
-  .score { font-weight: 700; }
-  .score.high { color: #22c55e; }
-  .score.med  { color: #eab308; }
-  .score.low  { color: #ef4444; }
-  details summary { cursor: pointer; color: #38bdf8; font-size: 0.8rem; }
-  .tooltip { position: absolute; background: #1e293b; border: 1px solid #475569; border-radius: 6px;
-             padding: 0.75rem; font-size: 0.75rem; max-width: 300px; pointer-events: none;
-             display: none; z-index: 10; }
+  .node circle { cursor: pointer; transition: r 0.15s; }
+  .node circle:hover { r: 12; }
+  .node text { font-size: 9px; fill: #94a3b8; pointer-events: none; }
+  .link { stroke-opacity: 0.45; }
+  .link.existing { stroke: #334155; }
+  .link.new-rel   { stroke: #38bdf8; stroke-opacity: 0.75; }
+  .graph-legend { position: absolute; bottom: 12px; right: 14px; display: flex; gap: 12px;
+                  font-size: 0.7rem; color: #64748b; }
+  .graph-legend span::before { content: ""; display: inline-block; width: 18px; height: 2px;
+                                 vertical-align: middle; margin-right: 4px; }
+  .graph-legend .lg-new::before  { background: #38bdf8; }
+  .graph-legend .lg-exist::before { background: #334155; }
+  #graph-tooltip { position: absolute; background: #1e293b; border: 1px solid #334155;
+                   border-radius: 8px; padding: 0.65rem 0.85rem; font-size: 0.72rem;
+                   max-width: 280px; pointer-events: none; display: none; z-index: 10;
+                   box-shadow: 0 4px 20px #0008; }
+  #graph-tooltip strong { color: #f1f5f9; display: block; margin-bottom: 0.25rem; }
+  #graph-tooltip .tt-meta { color: #64748b; }
+
+  /* ── Table ── */
+  .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid #1f2937; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  thead { position: sticky; top: 52px; z-index: 10; }
+  th { background: #111827; color: #64748b; padding: 0.65rem 1rem; text-align: left;
+       font-weight: 600; text-transform: uppercase; font-size: 0.68rem; letter-spacing: .05em;
+       border-bottom: 1px solid #1f2937; white-space: nowrap; }
+  td { padding: 0.6rem 1rem; border-bottom: 1px solid #111827; vertical-align: top; background: #0d1526; }
+  tr:hover td { background: #111827; }
+
+  /* ── Source article cell ── */
+  .art-title { font-weight: 600; color: #e2e8f0; font-size: 0.82rem; line-height: 1.35;
+               max-width: 360px; word-break: break-word; }
+  .art-meta  { color: #475569; font-size: 0.68rem; margin-top: 0.2rem; }
+  .art-meta a { color: #38bdf8; text-decoration: none; }
+  .art-meta a:hover { text-decoration: underline; }
+
+  /* ── Status badge ── */
+  .badge { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.18rem 0.6rem;
+           border-radius: 999px; font-size: 0.68rem; font-weight: 700; }
+  .diag-detail { color: #475569; font-size: 0.68rem; margin-top: 0.3rem; line-height: 1.3; }
+  .ext-badge { color: #a78bfa; font-size: 0.65rem; margin-top: 0.2rem; }
+
+  /* ── Candidates ── */
+  .cand-summary { cursor: pointer; color: #38bdf8; font-size: 0.75rem; font-weight: 600;
+                  user-select: none; list-style: none; }
+  .cand-summary::-webkit-details-marker { display: none; }
+  .cand-summary::before { content: "▶ "; font-size: 0.6rem; }
+  details[open] .cand-summary::before { content: "▼ "; }
+  .cand-list { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; }
+
+  .cand-card { background: #0f1929; border: 1px solid #1e3050; border-radius: 7px;
+               padding: 0.55rem 0.75rem; }
+  .cand-card.exists { border-color: #1f2937; opacity: 0.6; }
+  .cand-top { display: flex; align-items: flex-start; gap: 0.5rem; }
+  .score-pill { flex-shrink: 0; font-size: 0.65rem; font-weight: 800; padding: 0.1rem 0.4rem;
+                border-radius: 5px; }
+  .score-pill.high { background: #052e16; color: #4ade80; }
+  .score-pill.med  { background: #422006; color: #fb923c; }
+  .score-pill.low  { background: #3b0764; color: #c084fc; }
+  .cand-title { font-weight: 600; color: #cbd5e1; font-size: 0.77rem; line-height: 1.35; flex: 1; }
+  .cand-title a { color: #38bdf8; text-decoration: none; }
+  .cand-title a:hover { text-decoration: underline; }
+  .cand-authors { color: #475569; font-size: 0.65rem; margin-top: 0.15rem; }
+  .method-chip { display: inline-block; font-size: 0.6rem; color: #64748b;
+                 border: 1px solid #1e293b; border-radius: 4px; padding: 0 0.3rem; margin-top: 0.2rem; }
+  .exists-chip { font-size: 0.62rem; color: #475569; border: 1px solid #1f2937;
+                 border-radius: 4px; padding: 0 0.3rem; display: inline-block; margin-left: 0.25rem; }
+  .cand-rawtext { color: #334155; font-size: 0.62rem; margin-top: 0.3rem;
+                  font-style: italic; line-height: 1.3; border-left: 2px solid #1e293b; padding-left: 0.4rem; }
+
+  /* ── Filter bar ── */
+  .filter-bar { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center; }
+  .filter-bar input { background: #111827; border: 1px solid #1f2937; border-radius: 7px;
+                      color: #e2e8f0; padding: 0.4rem 0.75rem; font-size: 0.8rem; outline: none; flex: 1; min-width: 200px; }
+  .filter-bar input:focus { border-color: #38bdf8; }
+  .filter-bar select { background: #111827; border: 1px solid #1f2937; border-radius: 7px;
+                       color: #e2e8f0; padding: 0.4rem 0.6rem; font-size: 0.78rem; outline: none; cursor: pointer; }
+  .filter-bar select:focus { border-color: #38bdf8; }
+  #count-badge { color: #64748b; font-size: 0.75rem; white-space: nowrap; }
 </style>
 </head>
 <body>
 <header>
-  <h1>🔗 Zotero Reference Automator — Informe de Relaciones</h1>
-  <p>Generado el {{ generated_at }} · {{ stats.total_items_in_library }} items en la biblioteca</p>
+  <span style="font-size:1.3rem">🔗</span>
+  <h1>Zotero Reference Automator</h1>
+  <div class="sub">Generado {{ generated_at }} · {{ stats.total_items_in_library }} items en biblioteca</div>
 </header>
 
 <div class="container">
@@ -254,9 +325,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <div class="stat-card"><div class="num">{{ stats.items_with_pdf }}</div><div class="lbl">Con PDF</div></div>
       <div class="stat-card"><div class="num">{{ stats.total_refs_extracted }}</div><div class="lbl">Refs extraídas</div></div>
       <div class="stat-card"><div class="num">{{ stats.refs_matched }}</div><div class="lbl">Con match</div></div>
-      <div class="stat-card"><div class="num">{{ stats.new_relations }}</div><div class="lbl">Relaciones nuevas</div></div>
-      <div class="stat-card"><div class="num">{{ stats.existing_relations }}</div><div class="lbl">Ya existían</div></div>
-      <div class="stat-card"><div class="num">{{ "%.1f"|format(stats.processing_time_s) }}s</div><div class="lbl">Tiempo total</div></div>
+      <div class="stat-card"><div class="num" style="color:#4ade80">{{ stats.new_relations }}</div><div class="lbl">Relaciones nuevas</div></div>
+      <div class="stat-card"><div class="num" style="color:#94a3b8">{{ stats.existing_relations }}</div><div class="lbl">Ya existían</div></div>
+      <div class="stat-card"><div class="num">{{ "%.1f"|format(stats.processing_time_s) }}s</div><div class="lbl">Tiempo</div></div>
     </div>
   </section>
 
@@ -265,61 +336,129 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <h2>Grafo de relaciones</h2>
     <div id="graph-container">
       <svg id="graph-svg"></svg>
-      <div class="tooltip" id="tooltip"></div>
+      <div id="graph-tooltip"></div>
+      <div class="graph-legend">
+        <span class="lg-new">Nuevas</span>
+        <span class="lg-exist">Existentes</span>
+      </div>
     </div>
   </section>
 
   <!-- Tabla de resultados -->
   <section>
     <h2>Detalle por artículo</h2>
-    <div style="overflow-x:auto">
-    <table>
+
+    <div class="filter-bar">
+      <input type="text" id="search-input" placeholder="Filtrar por título, DOI, autor…" oninput="filterTable()">
+      <select id="status-filter" onchange="filterTable()">
+        <option value="">Todos los estados</option>
+        <option value="ok">OK (PDF extraído)</option>
+        <option value="no_attachment">Sin PDF</option>
+        <option value="ocr_needed">Necesita OCR</option>
+        <option value="few_refs">Pocas refs</option>
+        <option value="error">Error</option>
+      </select>
+      <select id="cand-filter" onchange="filterTable()">
+        <option value="">Todas las filas</option>
+        <option value="has_new">Con relaciones nuevas</option>
+        <option value="has_any">Con candidatos</option>
+        <option value="none">Sin candidatos</option>
+      </select>
+      <span id="count-badge"></span>
+    </div>
+
+    <div class="table-wrap">
+    <table id="main-table">
       <thead>
         <tr>
-          <th>Artículo</th>
-          <th>Estado PDF</th>
-          <th>Refs extraídas</th>
-          <th>Relaciones candidatas</th>
+          <th style="width:35%">Artículo fuente</th>
+          <th style="width:14%">Estado PDF</th>
+          <th style="width:6%" title="Referencias extraídas del PDF / API externa">#&nbsp;Refs</th>
+          <th>Relaciones candidatas en tu biblioteca</th>
         </tr>
       </thead>
       <tbody>
       {% for rep in reports %}
       {% set diag = rep.diagnostic %}
       {% set meta = diag.status | status_meta if diag else status_meta["error"] %}
-        <tr>
+      {% set new_count = rep.candidates | selectattr("already_exists","equalto",false) | list | length %}
+        <tr data-status="{{ diag.status if diag else 'error' }}"
+            data-has-new="{{ 'yes' if new_count > 0 else 'no' }}"
+            data-has-any="{{ 'yes' if rep.candidates else 'no' }}"
+            data-search="{{ rep.item.title | lower }} {{ (rep.item.doi or '') | lower }} {{ rep.item.authors | join(' ') | lower }}">
           <td>
-            <div class="truncate" title="{{ rep.item.title }}">{{ rep.item.title }}</div>
-            <div style="color:#64748b;font-size:0.7rem">{{ rep.item.key }}{% if rep.item.doi %} · DOI: {{ rep.item.doi }}{% endif %}</div>
+            <div class="art-title" title="{{ rep.item.title }}">{{ rep.item.title }}</div>
+            <div class="art-meta">
+              {% if rep.item.authors %}{{ rep.item.authors[:2] | join('; ') }}{% if rep.item.authors|length > 2 %} et al.{% endif %}{% endif %}
+              {% if rep.item.year %} · {{ rep.item.year }}{% endif %}
+              {% if rep.item.doi %}
+               · <a href="https://doi.org/{{ rep.item.doi }}" target="_blank" title="{{ rep.item.doi }}">DOI ↗</a>
+              {% endif %}
+              <span style="color:#1e3050"> · {{ rep.item.key }}</span>
+            </div>
           </td>
           <td>
-            <span class="badge" style="background:{{ meta.color }}20;color:{{ meta.color }}">
-              {{ meta.icon }} {{ meta.label }}
+            <span class="badge" style="background:{{ meta.color }}18;color:{{ meta.color }};border:1px solid {{ meta.color }}40">
+              {{ meta.icon }}&nbsp;{{ meta.label }}
             </span>
             {% if diag and diag.detail %}
-            <div style="color:#64748b;font-size:0.7rem;margin-top:0.2rem">{{ diag.detail[:80] }}</div>
+            <div class="diag-detail">{{ diag.detail[:100] }}</div>
             {% endif %}
-            {% if rep.external_refs_used %}<div style="color:#a78bfa;font-size:0.7rem">↳ vía API externa</div>{% endif %}
+            {% if rep.external_refs_used %}
+            <div class="ext-badge">↳ vía {{ diag.external_source or 'API externa' }}</div>
+            {% endif %}
           </td>
-          <td style="text-align:center">{{ rep.refs_extracted }}</td>
+          <td style="text-align:center;color:{% if rep.refs_extracted > 0 %}#e2e8f0{% else %}#334155{% endif %}">
+            {{ rep.refs_extracted if rep.refs_extracted > 0 else '—' }}
+          </td>
           <td>
             {% if rep.candidates %}
-            <details>
-              <summary>{{ rep.candidates|length }} candidato(s)</summary>
-              <ul class="candidate-list">
-              {% for c in rep.candidates[:10] %}
-                <li>
-                  {% set sc = c.confidence %}
-                  <span class="score {% if sc==100 %}high{% elif sc>=80 %}med{% else %}low{% endif %}">{{ sc }}%</span>
-                  [{{ c.match_method | method_label }}]
-                  {{ c.target_key }}
-                  {% if c.already_exists %}<span style="color:#64748b">(ya existe)</span>{% endif %}
-                  <br><span style="color:#475569">{{ c.reference_text[:80] }}</span>
-                </li>
+            {% set new_cands = rep.candidates | selectattr("already_exists","equalto",false) | list %}
+            {% set old_cands = rep.candidates | selectattr("already_exists","equalto",true)  | list %}
+            <details {% if new_count > 0 %}open{% endif %}>
+              <summary class="cand-summary">
+                {% if new_count > 0 %}
+                  <span style="color:#4ade80">{{ new_count }} nueva{{ 's' if new_count > 1 else '' }}</span>
+                  {% if old_cands %}<span style="color:#475569"> · {{ old_cands|length }} ya exist{{ 'ían' if old_cands|length > 1 else 'ía' }}</span>{% endif %}
+                {% else %}
+                  <span style="color:#475569">{{ rep.candidates|length }} ya exist{{ 'ían' if rep.candidates|length > 1 else 'ía' }}</span>
+                {% endif %}
+              </summary>
+              <div class="cand-list">
+              {% for c in (new_cands + old_cands)[:15] %}
+                {% set sc = c.confidence %}
+                <div class="cand-card {% if c.already_exists %}exists{% endif %}">
+                  <div class="cand-top">
+                    <span class="score-pill {% if sc==100 %}high{% elif sc>=80 %}med{% else %}low{% endif %}">{{ sc }}%</span>
+                    <div style="flex:1">
+                      <div class="cand-title">
+                        {% if c.target_doi %}
+                          <a href="https://doi.org/{{ c.target_doi }}" target="_blank">{{ c.target_title or c.target_key }}</a>
+                        {% else %}
+                          {{ c.target_title or c.target_key }}
+                        {% endif %}
+                        {% if c.already_exists %}<span class="exists-chip">ya existe</span>{% endif %}
+                      </div>
+                      <div class="cand-authors">
+                        {{ c.target_authors[:2] | join('; ') }}{% if c.target_authors|length > 2 %} et al.{% endif %}
+                        {% if c.target_year %} · {{ c.target_year }}{% endif %}
+                        {% if c.target_doi %} · <span style="color:#334155;font-size:0.6rem">{{ c.target_doi[:40] }}</span>{% endif %}
+                      </div>
+                      <span class="method-chip">{{ c.match_method | method_label }}</span>
+                    </div>
+                  </div>
+                  <div class="cand-rawtext">{{ c.reference_text[:120] }}</div>
+                </div>
               {% endfor %}
-              </ul>
+              {% if rep.candidates|length > 15 %}
+              <div style="color:#475569;font-size:0.68rem;padding:0.25rem 0">
+                … y {{ rep.candidates|length - 15 }} más
+              </div>
+              {% endif %}
+              </div>
             </details>
             {% else %}
-            <span style="color:#475569">—</span>
+            <span style="color:#1e293b">—</span>
             {% endif %}
           </td>
         </tr>
@@ -332,81 +471,104 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 </div><!-- /container -->
 
 <script>
-const GRAPH = {{ graph_json }};
+// ── Filtro de tabla ──────────────────────────────────────────────────────────
+function filterTable() {
+  const q      = document.getElementById('search-input').value.toLowerCase();
+  const status = document.getElementById('status-filter').value;
+  const cand   = document.getElementById('cand-filter').value;
+  const rows   = document.querySelectorAll('#main-table tbody tr');
+  let visible  = 0;
+
+  rows.forEach(row => {
+    const matchSearch = !q || (row.dataset.search || '').includes(q);
+    const matchStatus = !status || row.dataset.status === status;
+    const matchCand   = !cand
+      || (cand === 'has_new'  && row.dataset.hasNew  === 'yes')
+      || (cand === 'has_any'  && row.dataset.hasAny  === 'yes')
+      || (cand === 'none'     && row.dataset.hasAny  === 'no');
+
+    const show = matchSearch && matchStatus && matchCand;
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  document.getElementById('count-badge').textContent = `${visible} / ${rows.length} artículos`;
+}
+document.addEventListener('DOMContentLoaded', () => filterTable());
 
 // ── D3 Force Graph ───────────────────────────────────────────────────────────
+const GRAPH = {{ graph_json }};
+
 (function() {
   const svg = d3.select("#graph-svg");
   const container = document.getElementById("graph-container");
   const W = container.clientWidth;
   const H = container.clientHeight;
-  const tooltip = document.getElementById("tooltip");
+  const tooltip = document.getElementById("graph-tooltip");
 
-  const nodesMap = GRAPH.nodes;
   const links = GRAPH.links;
+  const nodes = Object.values(GRAPH.nodes);
 
-  const nodes = Object.values(nodesMap);
-  const nodeById = {};
-  nodes.forEach(n => nodeById[n.id] = n);
-
-  // Solo mostrar nodos con al menos una conexión
   const connectedIds = new Set();
   links.forEach(l => { connectedIds.add(l.source); connectedIds.add(l.target); });
   const visibleNodes = nodes.filter(n => connectedIds.has(n.id));
 
   if (visibleNodes.length === 0) {
     svg.append("text").attr("x", W/2).attr("y", H/2)
-       .attr("text-anchor","middle").attr("fill","#64748b")
-       .text("No hay relaciones para visualizar.");
+       .attr("text-anchor","middle").attr("fill","#334155").attr("font-size","14")
+       .text("No hay relaciones para visualizar en este lote.");
     return;
   }
 
+  const nodeById = {};
+  visibleNodes.forEach(n => nodeById[n.id] = n);
+
   const g = svg.append("g");
+  svg.call(d3.zoom().scaleExtent([0.08, 6]).on("zoom", e => g.attr("transform", e.transform)));
 
-  // Zoom
-  svg.call(d3.zoom().scaleExtent([0.1, 4]).on("zoom", e => g.attr("transform", e.transform)));
-
-  // Simulación
   const sim = d3.forceSimulation(visibleNodes)
-    .force("link", d3.forceLink(links).id(d => d.id).distance(80).strength(0.5))
-    .force("charge", d3.forceManyBody().strength(-150))
+    .force("link", d3.forceLink(links).id(d => d.id).distance(90).strength(0.4))
+    .force("charge", d3.forceManyBody().strength(-200))
     .force("center", d3.forceCenter(W/2, H/2))
-    .force("collide", d3.forceCollide(20));
+    .force("collide", d3.forceCollide(18));
 
   const link = g.append("g")
-    .selectAll("line")
-    .data(links)
-    .join("line")
-    .attr("class", d => "link" + (d.already_exists ? "" : " new"))
-    .attr("stroke-width", d => d.already_exists ? 1 : 1.5);
+    .selectAll("line").data(links).join("line")
+    .attr("class", d => "link " + (d.already_exists ? "existing" : "new-rel"))
+    .attr("stroke-width", d => d.already_exists ? 1 : 1.8);
+
+  // Color nodes by connection count
+  const maxDeg = Math.max(...visibleNodes.map(n => Object.keys(n.links||{}).length), 1);
+  const colorScale = d3.scaleSequential(d3.interpolateCool).domain([0, maxDeg]);
 
   const node = g.append("g")
-    .selectAll("g")
-    .data(visibleNodes)
-    .join("g")
-    .attr("class","node")
+    .selectAll("g").data(visibleNodes).join("g").attr("class","node")
     .call(d3.drag()
       .on("start", (e,d) => { if(!e.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; })
       .on("drag",  (e,d) => { d.fx=e.x; d.fy=e.y; })
       .on("end",   (e,d) => { if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }));
 
   node.append("circle")
-    .attr("r", d => 6 + Math.min(Object.keys(d.links||{}).length, 10))
-    .attr("fill", "#38bdf8")
-    .attr("stroke", "#0ea5e9")
-    .attr("stroke-width", 1.5)
-    .on("mouseover", (e, d) => {
+    .attr("r", d => 5 + Math.min(Object.keys(d.links||{}).length * 1.5, 12))
+    .attr("fill", d => colorScale(Object.keys(d.links||{}).length))
+    .attr("stroke", "#0a0f1e").attr("stroke-width", 1.5)
+    .on("mousemove", (e, d) => {
+      const auths = (d.authors||[]).slice(0,2).join('; ') + (d.authors?.length > 2 ? ' et al.' : '');
       tooltip.style.display = "block";
-      tooltip.innerHTML = `<b>${d.title||d.id}</b><br>Key: ${d.id}${d.doi?"<br>DOI: "+d.doi:""}${d.year?"<br>Año: "+d.year:""}`;
-      tooltip.style.left = (e.offsetX+12)+"px";
-      tooltip.style.top  = (e.offsetY+12)+"px";
+      tooltip.innerHTML = `<strong>${(d.title||d.id).substring(0,80)}</strong>
+        <div class="tt-meta">${auths}${d.year ? ' · '+d.year : ''}${d.doi ? '<br><span style="color:#38bdf8">'+d.doi+'</span>' : ''}</div>`;
+      const rect = container.getBoundingClientRect();
+      let left = e.clientX - rect.left + 12;
+      let top  = e.clientY - rect.top  + 12;
+      if (left + 290 > W) left = left - 290 - 24;
+      tooltip.style.left = left + "px";
+      tooltip.style.top  = top  + "px";
     })
-    .on("mouseout", () => { tooltip.style.display="none"; });
+    .on("mouseleave", () => { tooltip.style.display="none"; });
 
   node.append("text")
-    .attr("dy", "0.31em")
-    .attr("x", d => 8 + Math.min(Object.keys(d.links||{}).length, 10))
-    .text(d => (d.title||d.id).substring(0,30));
+    .attr("dy", "0.32em")
+    .attr("x", d => 7 + Math.min(Object.keys(d.links||{}).length * 1.5, 12))
+    .text(d => (d.title||d.id).substring(0, 28));
 
   sim.on("tick", () => {
     link.attr("x1", d => d.source.x).attr("y1", d => d.source.y)

@@ -64,6 +64,10 @@ apis:
   # Sin clave: 3 req/s. Con clave: 10 req/s.
   ncbi_api_key: ""
 
+  # CORE (core.ac.uk): obtén tu clave en https://core.ac.uk/services/api
+  # Sin clave: la integración se desactiva. Acceso gratuito con registro.
+  core_api_key: ""
+
 # ──────────────────────────────────────────────
 # Informe de salida
 # ──────────────────────────────────────────────

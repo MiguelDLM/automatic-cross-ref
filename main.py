@@ -239,8 +239,10 @@ def run_pipeline(
             crossref_email       = m_cfg.get("crossref_email", os.getenv("CROSSREF_EMAIL", "")),
             openalex_email       = api_cfg.get("openalex_email", os.getenv("OPENALEX_EMAIL", "")),
             ncbi_api_key         = api_cfg.get("ncbi_api_key", os.getenv("NCBI_API_KEY", "")),
+            core_api_key         = api_cfg.get("core_api_key", os.getenv("CORE_API_KEY", "")),
         )
-        console.print("[green]✓ Fuentes externas habilitadas (Semantic Scholar · OpenAlex · CrossRef · PubMed)[/green]")
+        sources = "Semantic Scholar · OpenAlex · CrossRef · CORE · PubMed"
+        console.print(f"[green]✓ Fuentes externas habilitadas ({sources})[/green]")
 
     # ── 5. Extractor PDF ──────────────────────────────────────────────────────
     extractor = PDFExtractor(

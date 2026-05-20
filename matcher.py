@@ -62,6 +62,11 @@ class RelationCandidate:
     match_method: str
     reference_text: str          # texto original de la referencia
     already_exists: bool = False
+    # Metadatos del item destino (para el informe)
+    target_title: str = ""
+    target_authors: list[str] = field(default_factory=list)
+    target_year: Optional[str] = None
+    target_doi: Optional[str] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -172,6 +177,12 @@ class ReferenceMatcher:
     # Setup
     # ─────────────────────────────────────────────────────────────────────────
 
+    # Títulos genéricos de adjuntos que no deben indexarse como artículos
+    _GENERIC_TITLES = frozenset({
+        "pdf", "full text pdf", "full text", "article", "paper", "manuscript",
+        "preprint", "document", "untitled", "fulltext", "attachment",
+    })
+
     def load_library(self, raw_items: list[dict[str, Any]]) -> int:
         """
         Carga e indexa todos los items de la biblioteca.
@@ -190,6 +201,13 @@ class ReferenceMatcher:
 
             title = data.get("title", "") or ""
             if not title:
+                continue
+
+            # Filtrar adjuntos con títulos genéricos (ej. "PDF", "Full Text PDF")
+            if _normalize_title(title) in self._GENERIC_TITLES:
+                continue
+            # Filtrar ítems con tipo attachment que se cuelen
+            if data.get("itemType", "") == "attachment":
                 continue
 
             item = LibraryItem(
@@ -297,14 +315,19 @@ class ReferenceMatcher:
                 continue
 
             already_exists = result.matched_item.key in existing
+            tgt = result.matched_item
 
             candidates.append(RelationCandidate(
                 source_key=source_item.key,
-                target_key=result.matched_item.key,
+                target_key=tgt.key,
                 confidence=result.confidence,
                 match_method=result.match_method,
                 reference_text=ref.raw_text[:200],
                 already_exists=already_exists,
+                target_title=tgt.title,
+                target_authors=tgt.authors[:3],
+                target_year=tgt.year,
+                target_doi=tgt.doi,
             ))
 
         # Deduplicar (mismo target puede aparecer varias veces)
