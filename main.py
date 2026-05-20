@@ -338,33 +338,40 @@ def run_pipeline(
                         diagnostic_counts[PDFStatus.ERROR.value] = \
                             diagnostic_counts.get(PDFStatus.ERROR.value, 0) + 1
 
-            # ── Fuentes externas ───────────────────────────────────────────
+            # ── Fuentes externas — siempre se consultan si hay DOI ────────
             external_refs_used = False
             if use_external and ext_client and lib_item.doi:
-                pdf_failed = diag.status in (
-                    PDFStatus.OCR_NEEDED.value, PDFStatus.FEW_REFS.value,
-                    PDFStatus.NO_ATTACHMENT.value, PDFStatus.NOT_FOUND.value,
-                    PDFStatus.LINKED_FILE.value,
-                )
-                if pdf_failed or not refs:
-                    ext_refs = ext_client.get_references_by_doi(lib_item.doi)
-                    if ext_refs:
-                        refs = [
-                            ParsedReference(
-                                raw_text  = r.title or "",
-                                doi       = r.doi,
-                                arxiv_id  = r.arxiv_id,
-                                title     = r.title,
-                                authors   = r.authors,
-                                year      = r.year,
-                                ref_index = i,
-                            )
-                            for i, r in enumerate(ext_refs)
-                        ]
+                ext_refs = ext_client.get_references_by_doi(lib_item.doi)
+                if ext_refs:
+                    # Fusionar con refs del PDF; deduplicar por DOI
+                    pdf_dois = {r.doi.lower().strip() for r in refs if r.doi}
+                    ext_parsed = []
+                    for i, r in enumerate(ext_refs):
+                        doi_norm = (r.doi or "").lower().strip()
+                        if doi_norm and doi_norm in pdf_dois:
+                            continue  # ya cubierto por el PDF
+                        ext_parsed.append(ParsedReference(
+                            raw_text  = r.title or "",
+                            doi       = r.doi,
+                            arxiv_id  = r.arxiv_id,
+                            title     = r.title,
+                            authors   = r.authors,
+                            year      = r.year,
+                            ref_index = len(refs) + i,
+                        ))
+                    if ext_parsed:
+                        refs.extend(ext_parsed)
                         external_refs_used = True
                         diag.external_source = _guess_source(ext_refs)
+                        pdf_failed = diag.status in (
+                            PDFStatus.OCR_NEEDED.value, PDFStatus.FEW_REFS.value,
+                            PDFStatus.NO_ATTACHMENT.value, PDFStatus.NOT_FOUND.value,
+                            PDFStatus.LINKED_FILE.value,
+                        )
                         if pdf_failed:
-                            diag.detail += f" → refs obtenidas via {diag.external_source}"
+                            diag.detail += f" → {len(ext_parsed)} refs via {diag.external_source}"
+                        else:
+                            diag.detail += f" · +{len(ext_parsed)} refs via {diag.external_source}"
 
             stats.items_processed += 1
             stats.total_refs_extracted += len(refs)
