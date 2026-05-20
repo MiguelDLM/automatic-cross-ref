@@ -1,0 +1,17 @@
+[project]
+name = "zotero-reference-automator"
+version = "0.1.0"
+description = "Automated PDF reference parser and Zotero relation builder (read-only report mode)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pdfminer.six>=20221105",
+    "httpx>=0.27.0",
+    "rapidfuzz>=3.9.0",
+    "pydantic>=2.7.0",
+    "click>=8.1.0",
+    "rich>=13.7.0",
+    "pyyaml>=6.0.1",
+    "python-dotenv>=1.0.0",
+    "jinja2>=3.1.0",
+]

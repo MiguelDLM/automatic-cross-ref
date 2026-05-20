@@ -1,0 +1,75 @@
+# Automatizador de Referencias Zotero v2 — Configuración de ejemplo
+# Copia este archivo como config.yaml y rellena tus credenciales.
+# NUNCA subas config.yaml al repositorio (está en .gitignore).
+
+# ──────────────────────────────────────────────
+# API local de Zotero
+# ──────────────────────────────────────────────
+zotero:
+  api_url: "http://localhost:23119/api/users/0"
+  api_key: ""           # dejar vacío para API local sin autenticación
+  page_size: 100
+
+# ──────────────────────────────────────────────
+# Extractor de PDFs
+# ──────────────────────────────────────────────
+extractor:
+  max_pages_from_end: 10
+  min_ref_length: 20
+  max_ref_length: 1000
+  # Mínimo de caracteres en las primeras páginas para asumir que el PDF tiene texto
+  # (si hay menos, se clasifica como "ocr_needed")
+  min_text_chars: 200
+  section_headers:
+    - "References"
+    - "Bibliography"
+    - "参考文献"
+    - "REFERENCES"
+    - "BIBLIOGRAPHY"
+    - "Literature cited"
+    - "Works cited"
+    - "Referencias"
+    - "LITERATURA CITADA"
+    - "Bibliografía"
+    - "BIBLIOGRAFÍA"
+
+# ──────────────────────────────────────────────
+# Matcher de referencias
+# ──────────────────────────────────────────────
+matcher:
+  # Umbral de similitud fuzzy de título (0-100).
+  # Solo se usa si no hay DOI/arXiv.
+  fuzzy_threshold: 82
+  # Si se activa --only-100, este umbral se ignora y se pone a 100.
+  doi_is_exact: true
+  max_candidates: 500
+  use_crossref: true
+  crossref_email: "your@email.com"  # requerido para acceso al polite pool de CrossRef
+
+# ──────────────────────────────────────────────
+# Credenciales de APIs externas
+# ──────────────────────────────────────────────
+# Todas son opcionales; sin credenciales funcionan con límites más bajos.
+# Puedes también ponerlas en un archivo .env en el mismo directorio.
+apis:
+  # Semantic Scholar: obtén tu clave en https://www.semanticscholar.org/product/api
+  # Sin clave: 100 req/5 min. Con clave: 1 req/s (tier gratuito).
+  semantic_scholar_key: ""
+
+  # OpenAlex: solo se necesita tu email para el "polite pool" (mayor velocidad).
+  # Sin email: 10 req/s. Con email: mayor prioridad.
+  openalex_email: "your@email.com"
+
+  # NCBI/PubMed: obtén tu clave en https://www.ncbi.nlm.nih.gov/account/
+  # Sin clave: 3 req/s. Con clave: 10 req/s.
+  ncbi_api_key: ""
+
+# ──────────────────────────────────────────────
+# Informe de salida
+# ──────────────────────────────────────────────
+report:
+  output_dir: "output"
+  # Confianza mínima para incluir un match en el informe (0-100).
+  # 70 = balance entre precision y recall.
+  # 100 = solo DOI/arXiv exactos (sin falsos positivos).
+  min_confidence: 70
