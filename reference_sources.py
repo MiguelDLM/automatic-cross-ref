@@ -101,8 +101,8 @@ class ReferenceSourceClient:
         data = r.json()
 
         refs = []
-        for item in data.get("data", []):
-            cited = item.get("citedPaper", {})
+        for item in (data.get("data") or []):
+            cited = item.get("citedPaper") or {}
             if not cited:
                 continue
             refs.append(self._parse_ss_paper(cited, "semantic_scholar"))

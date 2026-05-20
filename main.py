@@ -461,7 +461,7 @@ def run(config, limit, output_dir, only_100, no_external, min_confidence, ocr, r
     if min_confidence is not None:
         cfg["report"]["min_confidence"] = min_confidence
 
-    mode_str = "100%% exacto (DOI/arXiv)" if only_100 else f"≥{cfg['report'].get('min_confidence', 70)}%% confianza"
+    mode_str = "100% exacto (DOI/arXiv)" if only_100 else f"≥{cfg['report'].get('min_confidence', 70)}% confianza"
     console.print(Panel(
         f"[bold]Modo: Solo lectura · Umbral de matching: {mode_str}[/bold]\n"
         "No se modificará ningún dato en Zotero.\n"
